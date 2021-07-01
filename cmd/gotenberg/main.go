@@ -12,6 +12,7 @@ import (
 	"github.com/thecodingmachine/gotenberg/internal/pkg/conf"
 	"github.com/thecodingmachine/gotenberg/internal/pkg/xcontext"
 	"github.com/thecodingmachine/gotenberg/internal/pkg/xlog"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 // version will be set on build time.
@@ -19,6 +20,11 @@ import (
 var version = "snapshot"
 
 func main() {
+
+    // Start DataDog tracer
+    tracer.Start()
+    defer tracer.Stop()
+
 	const op string = "main"
 	config, err := conf.FromEnv()
 	systemLogger := xlog.New(config.LogLevel(), "system")

@@ -1,0 +1,62 @@
+name: Build
+on: [ push ]
+
+jobs:
+  push-image-to-ecr:
+    runs-on: self-hosted
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v2
+      - name: install aws cli
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends awscli
+      - name: install hub cli
+        run: |
+          mkdir -p ~/bin
+          wget https://github.com/github/hub/releases/download/v2.12.2/hub-linux-amd64-2.12.2.tgz &&
+          tar xzvf hub-linux-amd64-2.12.2.tgz &&
+          mv hub-linux-amd64-2.12.2/bin/hub ~/bin/hub
+      - name: Set env vars for short sha
+        run: echo "GITHUB_SHA_SHORT=$(echo $GITHUB_SHA | cut -c 1-6)" >> $GITHUB_ENV
+      - name: set env vars for image names
+        run: |
+          echo "FULL_IMAGE_NAME=638608113287.dkr.ecr.us-east-1.amazonaws.com/gotenberg:${GITHUB_SHA_SHORT}" >> $GITHUB_ENV
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: shshe
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build Gotebenberg image
+        run: |
+          docker build -t app .
+          docker tag app $FULL_IMAGE_NAME
+      - name: Push image to ECR
+        run: |
+          eval $(aws ecr get-login --region us-east-1 --no-include-email)
+          docker push $FULL_IMAGE_NAME
+          echo "Pushed image $FULL_IMAGE_NAME"
+
+  update-deployment:
+    runs-on: self-hosted
+    if: ${{ github.ref == 'refs/heads/master' }}
+    needs: [ push-image-to-ecr ]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Checkout deployment repository
+        uses: actions/checkout@v2
+        with:
+          repository: alkymi-io/deployment
+          path: deployment
+          token: ${{ secrets.GH_CI_ACCESS_TOKEN }}
+      - uses: dopplerhq/cli-action@v1
+      - name: Set env vars for sha
+        run: echo "GITHUB_SHA_SHORT=$(echo $GITHUB_SHA | cut -c 1-6)" >> $GITHUB_ENV
+      - name: Install hub cli
+        run: |
+          mkdir -p ~/bin
+          wget https://github.com/github/hub/releases/download/v2.12.2/hub-linux-amd64-2.12.2.tgz &&
+          tar xzvf hub-linux-amd64-2.12.2.tgz &&
+          mv hub-linux-amd64-2.12.2/bin/hub ~/bin/hub
+      - name: Submit PR to update deployment repository
+        run: |
+          bin/update_deployment.sh "$GITHUB_SHA_SHORT"
